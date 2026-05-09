@@ -8,7 +8,7 @@ import anthemav
 __all__ = ("console", "monitor")
 
 
-async def console(loop, log):
+async def console(log):
     """Connect to receiver and show events as they occur.
 
     Pulls the following arguments from the command line (not method arguments):
@@ -44,7 +44,7 @@ async def console(loop, log):
     log.info("Connecting to Anthem AVR at %s:%i" % (host, port))
 
     conn = await anthemav.Connection.create(
-        host=host, port=port, loop=loop, update_callback=log_callback
+        host=host, port=port, update_callback=log_callback
     )
 
     log.info("Power state is " + str(conn.protocol.power))
@@ -55,10 +55,13 @@ async def console(loop, log):
     log.info("Number of zone is %s", len(conn.protocol.zones))
     log.info("Volume is " + str(conn.protocol.zones[1].volume))
 
+    await asyncio.get_event_loop().create_future()  # run forever until Ctrl+C
+
 
 def monitor():
     """Wrapper to call console with a loop."""
     log = logging.getLogger(__name__)
-    loop = asyncio.get_event_loop()
-    asyncio.ensure_future(console(loop, log))
-    loop.run_forever()
+    try:
+        asyncio.run(console(log))
+    except KeyboardInterrupt:
+        pass
