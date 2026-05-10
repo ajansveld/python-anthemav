@@ -1048,8 +1048,9 @@ class AVR(asyncio.Protocol):
             value = rawvalue
 
             if key in LOOKUP:
-                if rawvalue in LOOKUP[key]:
-                    value = LOOKUP[key][rawvalue]
+                lookup_key = rawvalue.zfill(2) if rawvalue not in LOOKUP[key] and rawvalue.isdigit() else rawvalue
+                if lookup_key in LOOKUP[key]:
+                    value = LOOKUP[key][lookup_key]
 
             if mode == "raw":
                 return rawvalue
