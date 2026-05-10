@@ -1109,7 +1109,7 @@ class AVR(asyncio.Protocol):
     def audio_listening_mode_text(self) -> str | None:
         """Current audio listening mode (str) (read-only)."""
         raw = self._get_multiprop("Z1ALM", mode="raw")
-        if raw is None:
+        if not raw or not raw.strip().lstrip("-").isdigit():
             return None
         number = int(raw)
         reverse = {v: k for k, v in self._alm_number.items()}
