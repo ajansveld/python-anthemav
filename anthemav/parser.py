@@ -16,11 +16,21 @@ def parse_message(message: str) -> ParsedMessage | None:
     return parse_x40_message(message)
 
 
+# Per-input commands we recognize on x40 models. The check in
+# parse_x40_input_message uses substring matching, so if any future
+# token becomes a substring of another, list the longer one first.
+X40_INPUT_COMMANDS = ("ARC", "DV")
+
+
 def parse_x40_message(message: str) -> ParsedMessage | None:
     """Parse a message for x40 models."""
     if not message:
         return None
-    return parse_x40_input_message(message, "ARC")
+    for command in X40_INPUT_COMMANDS:
+        parsed = parse_x40_input_message(message, command)
+        if parsed is not None:
+            return parsed
+    return None
 
 
 def parse_x40_input_message(message: str, command: str) -> ParsedMessage | None:

@@ -49,6 +49,19 @@ ALM_NUMBER_x40 = {
 # Some models (eg:MRX 520) provide a limited list of listening mode
 ALM_RESTRICTED = ["00", "01", "02", "03", "04", "05", "06", "07"]
 
+# Dolby Audio Post Processing (per-input, x40 only).
+# Wire values come from the Anthem x40 IP/RS-232 spreadsheet:
+#   ISiDVx — 0=Off, 1=Movie, 2=Music, 3=Night
+DOLBY_POST_PROCESSING_TO_CODE = {
+    "Off": 0,
+    "Movie": 1,
+    "Music": 2,
+    "Night": 3,
+}
+DOLBY_POST_PROCESSING_FROM_CODE = {
+    str(v): k for k, v in DOLBY_POST_PROCESSING_TO_CODE.items()
+}
+
 ALM_RESTRICTED_MODEL = ["MRX 520"]
 
 LOOKUP: dict[str, dict[str, str]] = {}
@@ -171,7 +184,7 @@ LOOKUP["GCTXS"] = {
 LOOKUP["MAC"] = {"description": "MAC address"}
 
 COMMANDS_X20 = ["IDN", "ECH", "SIP", "Z1ARC", "FPB"]
-COMMANDS_X40 = ["PVOL", "WMAC", "EMAC", "IS1ARC", "GCFPB", "GCTXS"]
+COMMANDS_X40 = ["PVOL", "WMAC", "EMAC", "IS1ARC", "IS1DV", "GCFPB", "GCTXS"]
 COMMANDS_MDX_IGNORE = [
     "IDR",
     "ICN",
@@ -435,6 +448,7 @@ class AVR(asyncio.Protocol):
             if self._model_series == MODEL_X40:
                 self.query(f"IS{input_number}IN")
                 self.query(f"IS{input_number}ARC")
+                self.query(f"IS{input_number}DV")
             elif not self._available_input_numbers or input_number in self._available_input_numbers:
                 self.query(f"ISN{input_number:02d}")
 
@@ -638,7 +652,9 @@ class AVR(asyncio.Protocol):
         if self._model_series == MODEL_X20:
             self.query("Z1ARC")
         elif self._model_series == MODEL_X40:
-            self.query(f"IS{self.zones[1].input_number}ARC")
+            input_number = self.zones[1].input_number
+            self.query(f"IS{input_number}ARC")
+            self.query(f"IS{input_number}DV")
 
     async def force_refresh_power(self, command: str) -> None:
         """Force refresh of poweron when receiving commands."""
@@ -791,6 +807,11 @@ class AVR(asyncio.Protocol):
     def support_arc(self) -> bool:
         """Return true if the zone support Anthem room correction."""
         return self._model_series != MODEL_MDX
+
+    @property
+    def support_dolby_post_processing(self) -> bool:
+        """Return true if the AVR supports Dolby Audio Post Processing."""
+        return self._model_series == MODEL_X40
 
     @property
     def attenuation(self) -> int:
@@ -946,6 +967,49 @@ class AVR(asyncio.Protocol):
             self._set_boolean(f"IS{self.zones[1].input_number}ARC", value)
         elif self._model_series == MODEL_X20:
             self._set_boolean("Z1ARC", value)
+
+    @property
+    def dolby_post_processing_list(self) -> list[str]:
+        """List of available Dolby Audio Post Processing modes."""
+        return list(DOLBY_POST_PROCESSING_TO_CODE.keys())
+
+    @property
+    def dolby_post_processing(self) -> str | None:
+        """Current Dolby Audio Post Processing mode (read/write).
+
+        Returns one of "Off", "Movie", "Music", "Night", or None if the
+        device doesn't support it or the value isn't yet known.
+
+        This is a per-input setting; it tracks the active input on zone 1.
+        """
+        if self._model_series != MODEL_X40:
+            return None
+        raw = self.zones[1].get_current_input_value("DV")
+        if raw is None:
+            return None
+        return DOLBY_POST_PROCESSING_FROM_CODE.get(raw)
+
+    @dolby_post_processing.setter
+    def dolby_post_processing(self, value: str) -> None:
+        if self._model_series != MODEL_X40:
+            return
+        if value not in DOLBY_POST_PROCESSING_TO_CODE:
+            self.log.warning("Invalid Dolby Audio Post Processing value: %s", value)
+            return
+        input_number = self.zones[1].input_number
+        if input_number <= 0:
+            self.log.debug(
+                "No active input on zone 1; skipping Dolby post-processing write"
+            )
+            return
+        code = DOLBY_POST_PROCESSING_TO_CODE[value]
+        self.log.debug(
+            "Setting Dolby Audio Post Processing on input %d to %s (%d)",
+            input_number,
+            value,
+            code,
+        )
+        self.command(f"IS{input_number}DV{code}")
 
     #
     # Read-only text properties
